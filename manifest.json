@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "PokerNow Assistant",
+  "version": "0.3.1",
+  "description": "Folds preflop Hold'em hands outside configurable single or position-aware ranges on PokerNow.",
+  "permissions": ["storage", "activeTab", "offscreen"],
+  "host_permissions": [
+    "*://*.pokernow.com/*",
+    "*://pokernow.com/*",
+    "*://*.pokernow.club/*",
+    "*://pokernow.club/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "PokerNow Assistant"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.pokernow.com/*",
+        "*://pokernow.com/*",
+        "*://*.pokernow.club/*",
+        "*://pokernow.club/*"
+      ],
+      "js": ["assistant-core.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,301 @@
+document.addEventListener('DOMContentLoaded', () => {
+  const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
+  const enabledElement = document.getElementById('enabled');
+  const soundEnabledElement = document.getElementById('soundEnabled');
+  const rangeModeElement = document.getElementById('rangeMode');
+  const positionControlsElement = document.getElementById('positionControls');
+  const playerCountElement = document.getElementById('playerCount');
+  const positionElement = document.getElementById('position');
+  const copySingleElement = document.getElementById('copySingle');
+  const editingLabelElement = document.getElementById('editingLabel');
+  const contextHelpElement = document.getElementById('contextHelp');
+  const rangeElement = document.getElementById('range');
+  const selectedCountElement = document.getElementById('selectedCount');
+  const runtimeStatusElement = document.getElementById('runtimeStatus');
+  const bypassHandElement = document.getElementById('bypassHand');
+  const saveStatusElement = document.getElementById('saveStatus');
+  let dragging = false;
+  let dragMode = 'select';
+  let changedDuringDrag = new Set();
+  let statusTimer = null;
+  let rangeMode = 'single';
+  let singleRangeSet = {};
+  let positionRanges = {};
+
+  for (let playerCount = 2; playerCount <= 10; playerCount += 1) {
+    const option = document.createElement('option');
+    option.value = String(playerCount);
+    option.textContent = String(playerCount);
+    if (playerCount === 6) option.selected = true;
+    playerCountElement.appendChild(option);
+  }
+  PokerNowAssistantCore.POSITION_ORDER.forEach((position) => {
+    const option = document.createElement('option');
+    option.value = position;
+    option.textContent = position;
+    if (position === 'BTN') option.selected = true;
+    positionElement.appendChild(option);
+  });
+
+  function handKey(row, column) {
+    if (row === column) return `${RANKS[row]}${RANKS[column]}`;
+    if (row < column) return `${RANKS[row]}${RANKS[column]}s`;
+    return `${RANKS[column]}${RANKS[row]}o`;
+  }
+
+  function showSaved(message = 'Saved') {
+    window.clearTimeout(statusTimer);
+    saveStatusElement.textContent = message;
+    statusTimer = window.setTimeout(() => {
+      saveStatusElement.textContent = '';
+    }, 1400);
+  }
+
+  function selectedRange() {
+    const rangeSet = {};
+    rangeElement.querySelectorAll('.cell.selected').forEach((cell) => {
+      rangeSet[cell.dataset.key] = true;
+    });
+    return rangeSet;
+  }
+
+  function currentPositionRangeKey() {
+    return PokerNowAssistantCore.positionRangeKey(
+      Number(playerCountElement.value),
+      positionElement.value
+    );
+  }
+
+  function currentRangeSet() {
+    if (rangeMode === 'single') return singleRangeSet;
+    return PokerNowAssistantCore.decodeRangeSet(positionRanges[currentPositionRangeKey()]);
+  }
+
+  function renderRangeEditor() {
+    const positionMode = rangeMode === 'position';
+    rangeModeElement.value = rangeMode;
+    positionControlsElement.classList.toggle('hidden', !positionMode);
+    if (positionMode) {
+      editingLabelElement.textContent = `Editing ${positionElement.value}, ${playerCountElement.value} left`;
+      contextHelpElement.textContent = 'PokerNow seat position chooses the position; folded players reduce the players-left profile.';
+    } else {
+      editingLabelElement.textContent = 'Editing single range';
+      contextHelpElement.textContent = 'One range is used at every table.';
+    }
+    buildGrid(currentRangeSet());
+  }
+
+  function setSelected(cell, selected) {
+    cell.classList.toggle('selected', selected);
+    cell.setAttribute('aria-checked', selected ? 'true' : 'false');
+  }
+
+  function updateCount() {
+    const count = rangeElement.querySelectorAll('.cell.selected').length;
+    selectedCountElement.textContent = `${count} / 169 kept`;
+    selectedCountElement.classList.toggle('warning', count === 0);
+  }
+
+  function saveRange() {
+    const updatedRange = selectedRange();
+    if (rangeMode === 'single') {
+      singleRangeSet = updatedRange;
+      chrome.storage.sync.set({ rangeSet: singleRangeSet }, () => showSaved());
+    } else {
+      const rangeKey = currentPositionRangeKey();
+      positionRanges = {
+        ...positionRanges,
+        [rangeKey]: PokerNowAssistantCore.encodeRangeSet(updatedRange),
+      };
+      chrome.storage.sync.set({ positionRanges }, () => showSaved());
+    }
+    updateCount();
+  }
+
+  function applyDrag(cell) {
+    const key = cell?.dataset?.key;
+    if (!key || changedDuringDrag.has(key)) return;
+    setSelected(cell, dragMode === 'select');
+    changedDuringDrag.add(key);
+  }
+
+  function buildGrid(rangeSet) {
+    rangeElement.innerHTML = '';
+    const corner = document.createElement('div');
+    corner.className = 'header-cell';
+    rangeElement.appendChild(corner);
+
+    RANKS.forEach((rank) => {
+      const header = document.createElement('div');
+      header.className = 'header-cell top-header';
+      header.textContent = rank;
+      rangeElement.appendChild(header);
+    });
+
+    RANKS.forEach((rank, row) => {
+      const header = document.createElement('div');
+      header.className = 'header-cell';
+      header.textContent = rank;
+      rangeElement.appendChild(header);
+
+      RANKS.forEach((_columnRank, column) => {
+        const key = handKey(row, column);
+        const cell = document.createElement('div');
+        cell.className = `cell ${row === column ? 'pair' : row < column ? 'suited' : 'off'}`;
+        cell.dataset.key = key;
+        cell.title = key;
+        cell.textContent = key;
+        cell.setAttribute('role', 'checkbox');
+        cell.setAttribute('aria-label', `Keep ${key}`);
+        setSelected(cell, Boolean(rangeSet[key]));
+        rangeElement.appendChild(cell);
+      });
+    });
+
+    updateCount();
+  }
+
+  function renderRuntimeStatus(runtimeStatus) {
+    const message = runtimeStatus?.message || 'Open a PokerNow table.';
+    const hand = runtimeStatus?.handKey ? ` (${runtimeStatus.handKey})` : '';
+    const autoFoldOff = runtimeStatus?.enabled === false;
+    runtimeStatusElement.innerHTML = '<strong>Status:</strong> ';
+    const context = runtimeStatus?.position && runtimeStatus?.activePlayerCount
+      ? ` · ${runtimeStatus.position}, ${runtimeStatus.activePlayerCount} left`
+      : '';
+    runtimeStatusElement.append(`${message}${hand}${context}`);
+    bypassHandElement.disabled = autoFoldOff || !runtimeStatus?.canBypass || Boolean(runtimeStatus?.bypassed);
+    bypassHandElement.classList.toggle('active', autoFoldOff || Boolean(runtimeStatus?.bypassed));
+    bypassHandElement.textContent = autoFoldOff
+      ? 'Assistant turned off'
+      : runtimeStatus?.bypassed
+        ? 'Bypassed for this hand'
+        : 'Bypass this hand';
+  }
+
+  rangeElement.addEventListener('mousedown', (event) => {
+    const cell = event.target.closest('.cell');
+    if (!cell) return;
+    event.preventDefault();
+    dragging = true;
+    changedDuringDrag = new Set();
+    dragMode = cell.classList.contains('selected') ? 'deselect' : 'select';
+    applyDrag(cell);
+    updateCount();
+  });
+
+  rangeElement.addEventListener('mouseover', (event) => {
+    if (!dragging) return;
+    const cell = event.target.closest('.cell');
+    if (!cell) return;
+    applyDrag(cell);
+    updateCount();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    saveRange();
+  });
+
+  document.getElementById('selectAll').addEventListener('click', () => {
+    rangeElement.querySelectorAll('.cell').forEach((cell) => setSelected(cell, true));
+    saveRange();
+  });
+
+  document.getElementById('selectNone').addEventListener('click', () => {
+    rangeElement.querySelectorAll('.cell').forEach((cell) => setSelected(cell, false));
+    saveRange();
+  });
+
+  document.getElementById('invert').addEventListener('click', () => {
+    rangeElement.querySelectorAll('.cell').forEach((cell) => {
+      setSelected(cell, !cell.classList.contains('selected'));
+    });
+    saveRange();
+  });
+
+  enabledElement.addEventListener('change', () => {
+    chrome.storage.sync.set({ enabled: enabledElement.checked }, () => showSaved());
+  });
+
+  soundEnabledElement.addEventListener('change', () => {
+    chrome.storage.sync.set({ soundEnabled: soundEnabledElement.checked }, () => showSaved());
+  });
+
+  rangeModeElement.addEventListener('change', () => {
+    rangeMode = rangeModeElement.value === 'position' ? 'position' : 'single';
+    chrome.storage.sync.set({ rangeMode }, () => showSaved());
+    renderRangeEditor();
+  });
+
+  playerCountElement.addEventListener('change', renderRangeEditor);
+  positionElement.addEventListener('change', renderRangeEditor);
+
+  copySingleElement.addEventListener('click', () => {
+    buildGrid(singleRangeSet);
+    saveRange();
+    showSaved('Single range copied');
+  });
+
+  bypassHandElement.addEventListener('click', () => {
+    bypassHandElement.disabled = true;
+    enabledElement.checked = false;
+    chrome.storage.sync.set({ enabled: false });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeTab = tabs[0];
+      if (!activeTab?.id) {
+        showSaved('Assistant turned off');
+        return;
+      }
+
+      chrome.tabs.sendMessage(activeTab.id, { type: 'BYPASS_CURRENT_HAND' }, (response) => {
+        if (chrome.runtime.lastError) {
+          showSaved('Assistant off; refresh the PokerNow tab');
+          return;
+        }
+        if (!response?.ok) {
+          showSaved('Assistant turned off');
+          return;
+        }
+        bypassHandElement.classList.add('active');
+        bypassHandElement.textContent = 'Assistant turned off';
+        showSaved('Assistant turned off');
+      });
+    });
+  });
+
+  buildGrid({});
+
+  chrome.storage.sync.get({
+    enabled: false,
+    rangeMode: 'single',
+    rangeSet: {},
+    positionRanges: {},
+    soundEnabled: true,
+  }, (items) => {
+    enabledElement.checked = Boolean(items.enabled);
+    soundEnabledElement.checked = items.soundEnabled !== false;
+    rangeMode = items.rangeMode === 'position' ? 'position' : 'single';
+    singleRangeSet = items.rangeSet || {};
+    positionRanges = items.positionRanges || {};
+    renderRangeEditor();
+  });
+
+  chrome.storage.local.get({ runtimeStatus: null }, (items) => {
+    renderRuntimeStatus(items.runtimeStatus);
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.runtimeStatus) {
+      renderRuntimeStatus(changes.runtimeStatus.newValue);
+    }
+    if (area === 'sync' && changes.enabled) {
+      enabledElement.checked = Boolean(changes.enabled.newValue);
+    }
+    if (area === 'sync' && changes.rangeMode) {
+      rangeMode = changes.rangeMode.newValue === 'position' ? 'position' : 'single';
+      renderRangeEditor();
+    }
+  });
+});
