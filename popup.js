@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const playerCountElement = document.getElementById('playerCount');
   const positionElement = document.getElementById('position');
   const copySingleElement = document.getElementById('copySingle');
+  const presetLabelElement = document.getElementById('presetLabel');
   const editingLabelElement = document.getElementById('editingLabel');
   const contextHelpElement = document.getElementById('contextHelp');
   const rangeElement = document.getElementById('range');
@@ -20,7 +21,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let statusTimer = null;
   let rangeMode = PokerNowAssistantCore.DEFAULT_RANGE_MODE;
   let singleRangeSet = {};
+  let savedPositionRanges = {};
   let positionRanges = {};
+  let latestRuntimeStatus = null;
 
   for (let playerCount = 2; playerCount <= 8; playerCount += 1) {
     const option = document.createElement('option');
@@ -49,6 +52,72 @@ document.addEventListener('DOMContentLoaded', () => {
       rangeSet[cell.dataset.key] = true;
     });
     return rangeSet;
+  }
+
+  function rangeSetToText(rangeSet) {
+    return PokerNowAssistantCore.HAND_KEYS
+      .filter((key) => rangeSet?.[key])
+      .join(', ');
+  }
+
+  function rangeSetsEqual(firstRangeSet, secondRangeSet) {
+    return PokerNowAssistantCore.HAND_KEYS.every((key) => (
+      Boolean(firstRangeSet?.[key]) === Boolean(secondRangeSet?.[key])
+    ));
+  }
+
+  function defaultRangeSetForCurrentPage() {
+    if (rangeMode !== 'position') return {};
+    return PokerNowAssistantCore.decodeRangeSet(
+      PokerNowAssistantCore.DEFAULT_POSITION_RANGES[currentPositionRangeKey()]
+    );
+  }
+
+  function defaultEncodedRange(rangeKey) {
+    return PokerNowAssistantCore.DEFAULT_POSITION_RANGES[rangeKey] || null;
+  }
+
+  function normalizePositionRangeOverrides(ranges) {
+    return Object.fromEntries(
+      Object.entries(ranges || {}).filter(([rangeKey, encodedRange]) => (
+        encodedRange !== defaultEncodedRange(rangeKey)
+      ))
+    );
+  }
+
+  function rangeStateLabel(rangeSet) {
+    if (!PokerNowAssistantCore.hasSelectedHands(rangeSet)) return 'Empty';
+    if (rangeMode !== 'position') return 'Custom';
+    return rangeSetsEqual(rangeSet, defaultRangeSetForCurrentPage()) ? 'Default' : 'Custom';
+  }
+
+  function updatePresetLabel(rangeSet = selectedRange()) {
+    const stateLabel = rangeStateLabel(rangeSet);
+    presetLabelElement.textContent = stateLabel;
+    presetLabelElement.className = `preset-label ${stateLabel.toLowerCase()}`;
+  }
+
+  async function copyTextToClipboard(text) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+  }
+
+  async function readTextFromClipboard() {
+    if (navigator.clipboard?.readText) return navigator.clipboard.readText();
+
+    return window.prompt('Paste range text') || '';
   }
 
   function currentPositionRangeKey() {
@@ -85,13 +154,31 @@ document.addEventListener('DOMContentLoaded', () => {
     rangeModeElement.value = rangeMode;
     positionControlsElement.classList.toggle('hidden', !positionMode);
     if (positionMode) {
-      editingLabelElement.textContent = `Editing ${positionElement.value}, ${playerCountElement.value} left`;
-      contextHelpElement.textContent = 'PokerNow seat position chooses the position; folded players reduce the players-left profile.';
+      editingLabelElement.textContent = `Editing ${positionElement.value}, ${playerCountElement.value} players`;
+      contextHelpElement.textContent = 'PokerNow seat position chooses the position; folded players keep the same player-count profile.';
     } else {
       editingLabelElement.textContent = 'Editing single range';
       contextHelpElement.textContent = 'One range is used at every table.';
     }
     buildGrid(currentRangeSet());
+  }
+
+  function syncEditorToRuntimeContext(runtimeStatus) {
+    if (rangeMode !== 'position') return;
+
+    const activePlayerCount = Number(runtimeStatus?.activePlayerCount);
+    const position = runtimeStatus?.position;
+    if (!Number.isInteger(activePlayerCount) || activePlayerCount < 2 || activePlayerCount > 8) return;
+
+    const validPositions = PokerNowAssistantCore.positionsForPlayerCount(activePlayerCount);
+    if (!validPositions.includes(position)) return;
+    if (playerCountElement.value === String(activePlayerCount) && positionElement.value === position) return;
+
+    playerCountElement.value = String(activePlayerCount);
+    renderPositionOptions();
+    positionElement.value = position;
+    renderRangeEditor();
+    return true;
   }
 
   function setSelected(cell, selected) {
@@ -103,22 +190,42 @@ document.addEventListener('DOMContentLoaded', () => {
     const count = rangeElement.querySelectorAll('.cell.selected').length;
     selectedCountElement.textContent = `${count} / 169 kept`;
     selectedCountElement.classList.toggle('warning', count === 0);
+    updatePresetLabel();
   }
 
-  function saveRange() {
+  function saveRange(message = 'Saved') {
     const updatedRange = selectedRange();
     if (rangeMode === 'single') {
       singleRangeSet = updatedRange;
-      chrome.storage.sync.set({ rangeSet: singleRangeSet }, () => showSaved());
+      chrome.storage.sync.set({ rangeSet: singleRangeSet }, () => showSaved(message));
     } else {
       const rangeKey = currentPositionRangeKey();
-      positionRanges = {
-        ...positionRanges,
-        [rangeKey]: PokerNowAssistantCore.encodeRangeSet(updatedRange),
-      };
-      chrome.storage.sync.set({ positionRanges }, () => showSaved());
+      const encodedRange = PokerNowAssistantCore.encodeRangeSet(updatedRange);
+      savedPositionRanges = { ...savedPositionRanges };
+      if (encodedRange === defaultEncodedRange(rangeKey)) {
+        delete savedPositionRanges[rangeKey];
+      } else {
+        savedPositionRanges[rangeKey] = encodedRange;
+      }
+      positionRanges = PokerNowAssistantCore.mergePositionRanges(savedPositionRanges);
+      chrome.storage.sync.set({ positionRanges: savedPositionRanges }, () => showSaved(message));
     }
     updateCount();
+  }
+
+  function resetCurrentRangeToDefault() {
+    if (rangeMode === 'single') {
+      buildGrid({});
+      saveRange('Default restored');
+      return;
+    }
+
+    const rangeKey = currentPositionRangeKey();
+    savedPositionRanges = { ...savedPositionRanges };
+    delete savedPositionRanges[rangeKey];
+    positionRanges = PokerNowAssistantCore.mergePositionRanges(savedPositionRanges);
+    buildGrid(currentRangeSet());
+    chrome.storage.sync.set({ positionRanges: savedPositionRanges }, () => showSaved('Default restored'));
   }
 
   function applyDrag(cell) {
@@ -157,6 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cell.setAttribute('role', 'checkbox');
         cell.setAttribute('aria-label', `Keep ${key}`);
         setSelected(cell, Boolean(rangeSet[key]));
+        if (key === latestRuntimeStatus?.handKey) cell.classList.add('current-hand');
         rangeElement.appendChild(cell);
       });
     });
@@ -165,12 +273,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderRuntimeStatus(runtimeStatus) {
+    latestRuntimeStatus = runtimeStatus;
     const message = runtimeStatus?.message || 'Open a PokerNow table.';
     const hand = runtimeStatus?.handKey ? ` (${runtimeStatus.handKey})` : '';
     const autoFoldOff = runtimeStatus?.enabled === false;
     runtimeStatusElement.innerHTML = '<strong>Status:</strong> ';
     const context = runtimeStatus?.position && runtimeStatus?.activePlayerCount
-      ? ` · ${runtimeStatus.position}, ${runtimeStatus.activePlayerCount} left`
+      ? ` · ${runtimeStatus.position}, ${runtimeStatus.activePlayerCount} players`
       : '';
     runtimeStatusElement.append(`${message}${hand}${context}`);
     bypassHandElement.disabled = autoFoldOff || !runtimeStatus?.canBypass || Boolean(runtimeStatus?.bypassed);
@@ -180,6 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
       : runtimeStatus?.bypassed
         ? 'Bypassed for this hand'
         : 'Bypass this hand';
+    if (!syncEditorToRuntimeContext(runtimeStatus)) buildGrid(currentRangeSet());
   }
 
   rangeElement.addEventListener('mousedown', (event) => {
@@ -224,6 +334,45 @@ document.addEventListener('DOMContentLoaded', () => {
     saveRange();
   });
 
+  document.getElementById('resetDefault').addEventListener('click', resetCurrentRangeToDefault);
+
+  document.getElementById('copyRange').addEventListener('click', () => {
+    const rangeText = rangeSetToText(selectedRange());
+    if (!rangeText) {
+      showSaved('No hands selected');
+      return;
+    }
+
+    copyTextToClipboard(rangeText)
+      .then(() => showSaved('Range copied'))
+      .catch(() => showSaved('Copy failed'));
+  });
+
+  document.getElementById('pasteRange').addEventListener('click', () => {
+    readTextFromClipboard()
+      .then((rangeText) => {
+        const pastedRange = PokerNowAssistantCore.parseRangeText(rangeText);
+        if (!PokerNowAssistantCore.hasSelectedHands(pastedRange)) {
+          showSaved('No valid hands pasted');
+          return;
+        }
+
+        buildGrid(pastedRange);
+        saveRange('Range pasted');
+      })
+      .catch(() => {
+        const rangeText = window.prompt('Paste range text') || '';
+        const pastedRange = PokerNowAssistantCore.parseRangeText(rangeText);
+        if (!PokerNowAssistantCore.hasSelectedHands(pastedRange)) {
+          showSaved('No valid hands pasted');
+          return;
+        }
+
+        buildGrid(pastedRange);
+        saveRange('Range pasted');
+      });
+  });
+
   enabledElement.addEventListener('change', () => {
     chrome.storage.sync.set({ enabled: enabledElement.checked }, () => showSaved());
   });
@@ -236,6 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
     rangeMode = rangeModeElement.value === 'position' ? 'position' : 'single';
     chrome.storage.sync.set({ rangeMode }, () => showSaved());
     renderRangeEditor();
+    syncEditorToRuntimeContext(latestRuntimeStatus);
   });
 
   playerCountElement.addEventListener('change', renderRangeEditor);
@@ -243,8 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   copySingleElement.addEventListener('click', () => {
     buildGrid(singleRangeSet);
-    saveRange();
-    showSaved('Single range copied');
+    saveRange('Single range copied');
   });
 
   bypassHandElement.addEventListener('click', () => {
@@ -280,15 +429,17 @@ document.addEventListener('DOMContentLoaded', () => {
     enabled: false,
     rangeMode: PokerNowAssistantCore.DEFAULT_RANGE_MODE,
     rangeSet: {},
-    positionRanges: PokerNowAssistantCore.DEFAULT_POSITION_RANGES,
+    positionRanges: {},
     soundEnabled: true,
   }, (items) => {
     enabledElement.checked = Boolean(items.enabled);
     soundEnabledElement.checked = items.soundEnabled !== false;
     rangeMode = items.rangeMode === 'position' ? 'position' : 'single';
     singleRangeSet = items.rangeSet || {};
-    positionRanges = PokerNowAssistantCore.mergePositionRanges(items.positionRanges);
+    savedPositionRanges = normalizePositionRangeOverrides(items.positionRanges);
+    positionRanges = PokerNowAssistantCore.mergePositionRanges(savedPositionRanges);
     renderRangeEditor();
+    syncEditorToRuntimeContext(latestRuntimeStatus);
   });
 
   chrome.storage.local.get({ runtimeStatus: null }, (items) => {
@@ -305,10 +456,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (area === 'sync' && changes.rangeMode) {
       rangeMode = changes.rangeMode.newValue === 'position' ? 'position' : 'single';
       renderRangeEditor();
+      syncEditorToRuntimeContext(latestRuntimeStatus);
     }
     if (area === 'sync' && changes.positionRanges) {
-      positionRanges = PokerNowAssistantCore.mergePositionRanges(changes.positionRanges.newValue);
+      savedPositionRanges = normalizePositionRangeOverrides(changes.positionRanges.newValue);
+      positionRanges = PokerNowAssistantCore.mergePositionRanges(savedPositionRanges);
       renderRangeEditor();
+      syncEditorToRuntimeContext(latestRuntimeStatus);
     }
   });
 });

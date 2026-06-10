@@ -29,6 +29,8 @@
     if (row < column) return `${rowRank}${columnRank}s`;
     return `${columnRank}${rowRank}o`;
   }));
+  const ALL_HANDS_RANGE_SET = Object.fromEntries(HAND_KEYS.map((key) => [key, true]));
+  const BB_DEFAULT_RANGE_KEYS = Array.from({ length: 7 }, (_value, index) => `${index + 2}:BB`);
   const RFI_RANGE_TEXT_BY_POSITION = {
     '2:SB': '22+, A2s+, K2s+, Q2s+, J2s+, T2s+, 92s+, 82s+, 72s+, 62s+, 52s+, 42s+, 32s, A2o+, K2o+, Q5o+, J7o+, T7o+, 96o+, 86o+, 75o+, 65o, 54o',
     '3:BTN': '22+, A2s+, K2s+, Q5s+, J7s+, T7s+, 96s+, 86s+, 75s+, 64s+, 54s, A2o+, K7o+, Q8o+, J8o+, T8o+, 98o, 87o',
@@ -238,18 +240,23 @@
   function parseRangeText(rangeText) {
     const rangeSet = {};
     String(rangeText || '')
-      .split(',')
+      .split(/[,\s;]+/)
       .forEach((token) => addRangeToken(rangeSet, token));
     return rangeSet;
   }
 
   function buildDefaultPositionRanges() {
-    return Object.fromEntries(
+    const defaultRanges = Object.fromEntries(
       Object.entries(RFI_RANGE_TEXT_BY_POSITION).map(([rangeKey, rangeText]) => [
         rangeKey,
         encodeRangeSet(parseRangeText(rangeText)),
       ])
     );
+    const encodedAllHandsRange = encodeRangeSet(ALL_HANDS_RANGE_SET);
+    BB_DEFAULT_RANGE_KEYS.forEach((rangeKey) => {
+      defaultRanges[rangeKey] = encodedAllHandsRange;
+    });
+    return defaultRanges;
   }
 
   const DEFAULT_RANGE_MODE = 'position';

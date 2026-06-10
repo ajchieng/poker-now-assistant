@@ -3,7 +3,7 @@
   "name": "PokerNow Assistant",
   "version": "0.3.1",
   "description": "Folds preflop Hold'em hands outside configurable single or position-aware ranges on PokerNow.",
-  "permissions": ["storage", "activeTab", "offscreen"],
+  "permissions": ["storage", "activeTab", "offscreen", "clipboardRead"],
   "host_permissions": [
     "*://*.pokernow.com/*",
     "*://pokernow.com/*",

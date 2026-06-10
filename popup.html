@@ -11,6 +11,7 @@
         --border: #d9dde5;
         --muted: #606775;
         --selected: #1769e0;
+        --current: #f59e0b;
       }
 
       * { box-sizing: border-box; }
@@ -30,6 +31,10 @@
       .context-controls.hidden { display: none; }
       .context-help { margin-top: 7px; }
       .editing { margin-left: auto; color: var(--muted); font-size: 11px; }
+      .preset-label { border: 1px solid var(--border); border-radius: 999px; padding: 2px 7px; color: var(--muted); background: #fff; font-size: 11px; font-weight: 600; white-space: nowrap; }
+      .preset-label.default { border-color: #9bbfa4; color: #256235; background: #f1faf3; }
+      .preset-label.custom { border-color: #aeb8c7; color: #374151; background: #f8fafc; }
+      .preset-label.empty { border-color: #d6a96e; color: #8a4b08; background: #fff6e9; }
       .count { margin-left: auto; color: var(--muted); font-size: 12px; }
       button { border: 1px solid var(--border); border-radius: 5px; padding: 5px 9px; background: #fff; color: #242935; font: inherit; font-size: 12px; cursor: pointer; }
       button:hover { background: #f5f7fa; }
@@ -42,6 +47,8 @@
       .cell.off { background: #fbf1f1; }
       .cell.pair { background: #f0f2fa; }
       .cell.selected { border-color: var(--selected); background: var(--selected); color: #fff; }
+      .cell.current-hand { border-color: var(--current); box-shadow: inset 0 0 0 2px var(--current); }
+      .cell.selected.current-hand { box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--current); }
       .runtime { margin-top: 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: #f8f9fb; font-size: 12px; }
       .runtime strong { margin-right: 4px; }
       #bypassHand { min-width: 132px; }
@@ -68,12 +75,13 @@
         <label for="rangeMode">Range mode</label>
         <select id="rangeMode">
           <option value="single">Single range</option>
-          <option value="position">Position + players left</option>
+          <option value="position">Position + player count</option>
         </select>
+        <span id="presetLabel" class="preset-label empty">Empty</span>
         <span id="editingLabel" class="editing">Editing single range</span>
       </div>
       <div id="positionControls" class="context-controls hidden">
-        <label for="playerCount">Players left</label>
+        <label for="playerCount">Players</label>
         <select id="playerCount"></select>
         <label for="position">Position</label>
         <select id="position"></select>
@@ -86,6 +94,9 @@
       <button id="selectAll" type="button">Keep all</button>
       <button id="selectNone" type="button">Clear</button>
       <button id="invert" type="button">Invert</button>
+      <button id="resetDefault" type="button">Reset default</button>
+      <button id="copyRange" type="button">Copy range</button>
+      <button id="pasteRange" type="button">Paste range</button>
       <span id="selectedCount" class="count"></span>
     </div>
 

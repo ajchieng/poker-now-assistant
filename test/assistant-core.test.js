@@ -10,6 +10,7 @@ const {
   decodeRangeSet,
   determinePosition,
   encodeRangeSet,
+  HAND_KEYS,
   isHandBypassed,
   isFoldClickCoolingDown,
   isImBackButtonText,
@@ -126,7 +127,7 @@ test('parses poker range shorthand into hand keys', () => {
     AA: true,
   });
 
-  assert.deepEqual(parseRangeText('AJs+, KQo, 22-44'), {
+  assert.deepEqual(parseRangeText('AJs+\nKQo; 22-44'), {
     AJs: true,
     AQs: true,
     AKs: true,
@@ -137,7 +138,7 @@ test('parses poker range shorthand into hand keys', () => {
   });
 });
 
-test('provides JSON-derived RFI defaults by players left and position', () => {
+test('provides JSON-derived RFI defaults by player count and position', () => {
   const sixMaxLjRange = decodeRangeSet(DEFAULT_POSITION_RANGES['6:LJ']);
   assert.equal(sixMaxLjRange.A9s, true);
   assert.equal(sixMaxLjRange.KTs, true);
@@ -151,11 +152,22 @@ test('provides JSON-derived RFI defaults by players left and position', () => {
   assert.equal(headsUpButtonRange.Q5o, true);
 });
 
+test('provides all hands as default big blind ranges', () => {
+  for (let playerCount = 2; playerCount <= 8; playerCount += 1) {
+    const rangeSet = decodeRangeSet(DEFAULT_POSITION_RANGES[`${playerCount}:BB`]);
+
+    assert.equal(Object.keys(rangeSet).length, HAND_KEYS.length);
+    assert.equal(rangeSet['72o'], true);
+  }
+});
+
 test('merges default position ranges beneath saved user edits', () => {
   const customRange = encodeRangeSet({ AA: true });
-  const mergedRanges = mergePositionRanges({ '6:LJ': customRange });
+  const customBigBlindRange = encodeRangeSet({ KK: true });
+  const mergedRanges = mergePositionRanges({ '6:LJ': customRange, '6:BB': customBigBlindRange });
 
   assert.equal(mergedRanges['6:LJ'], customRange);
+  assert.equal(mergedRanges['6:BB'], customBigBlindRange);
   assert.deepEqual(decodeRangeSet(mergedRanges['6:HJ']), decodeRangeSet(DEFAULT_POSITION_RANGES['6:HJ']));
 });
 

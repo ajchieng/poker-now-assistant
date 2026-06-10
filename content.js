@@ -132,13 +132,13 @@ function readTableContext() {
     heroSeatPosition,
     dealerSeatPosition,
   });
-  const activePlayerCount = participants.filter((player) => !player.classList.contains('fold')).length;
-  if (!position || activePlayerCount < 2 || activePlayerCount > 10) return null;
+  const participantCount = participants.length;
+  if (!position || participantCount < 2 || participantCount > 10) return null;
 
   return {
     position,
-    activePlayerCount,
-    participantCount: participants.length,
+    activePlayerCount: participantCount,
+    participantCount,
   };
 }
 
