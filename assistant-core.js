@@ -23,12 +23,42 @@
     A: 14,
   };
   const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
-  const POSITION_ORDER = ['UTG', 'UTG+1', 'UTG+2', 'UTG+3', 'LJ', 'HJ', 'CO', 'BTN', 'BTN/SB', 'SB', 'BB'];
+  const POSITION_ORDER = ['UTG', 'UTG+1', 'UTG+2', 'UTG+3', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB'];
   const HAND_KEYS = RANKS.flatMap((rowRank, row) => RANKS.map((columnRank, column) => {
     if (row === column) return `${rowRank}${columnRank}`;
     if (row < column) return `${rowRank}${columnRank}s`;
     return `${columnRank}${rowRank}o`;
   }));
+  const RFI_RANGE_TEXT_BY_POSITION = {
+    '2:SB': '22+, A2s+, K2s+, Q2s+, J2s+, T2s+, 92s+, 82s+, 72s+, 62s+, 52s+, 42s+, 32s, A2o+, K2o+, Q5o+, J7o+, T7o+, 96o+, 86o+, 75o+, 65o, 54o',
+    '3:BTN': '22+, A2s+, K2s+, Q5s+, J7s+, T7s+, 96s+, 86s+, 75s+, 64s+, 54s, A2o+, K7o+, Q8o+, J8o+, T8o+, 98o, 87o',
+    '3:SB': '22+, A2s+, K2s+, Q4s+, J6s+, T6s+, 95s+, 85s+, 74s+, 64s+, 53s+, 43s, A2o+, K6o+, Q8o+, J8o+, T8o+, 97o+, 87o, 76o',
+    '4:CO': '22+, A2s+, K7s+, Q8s+, J8s+, T8s+, 97s+, 87s, 76s, 65s, A8o+, KTo+, QTo+, JTo',
+    '4:BTN': '22+, A2s+, K2s+, Q5s+, J7s+, T7s+, 96s+, 86s+, 75s+, 64s+, 54s, A2o+, K7o+, Q8o+, J8o+, T8o+, 98o, 87o',
+    '4:SB': '22+, A2s+, K2s+, Q4s+, J6s+, T6s+, 95s+, 85s+, 74s+, 64s+, 53s+, 43s, A2o+, K6o+, Q8o+, J8o+, T8o+, 97o+, 87o, 76o',
+    '5:HJ': '44+, A7s+, K9s+, Q9s+, J9s+, T9s, 98s, 87s, ATo+, KJo+, QJo',
+    '5:CO': '22+, A2s+, K7s+, Q8s+, J8s+, T8s+, 97s+, 87s, 76s, 65s, A8o+, KTo+, QTo+, JTo',
+    '5:BTN': '22+, A2s+, K2s+, Q5s+, J7s+, T7s+, 96s+, 86s+, 75s+, 64s+, 54s, A2o+, K7o+, Q8o+, J8o+, T8o+, 98o, 87o',
+    '5:SB': '22+, A2s+, K2s+, Q4s+, J6s+, T6s+, 95s+, 85s+, 74s+, 64s+, 53s+, 43s, A2o+, K6o+, Q8o+, J8o+, T8o+, 97o+, 87o, 76o',
+    '6:LJ': '55+, A9s+, KTs+, QTs+, JTs, T9s, 98s, AJo+, KQo',
+    '6:HJ': '44+, A7s+, K9s+, Q9s+, J9s+, T9s, 98s, 87s, ATo+, KJo+, QJo',
+    '6:CO': '22+, A2s+, K7s+, Q8s+, J8s+, T8s+, 97s+, 87s, 76s, 65s, A8o+, KTo+, QTo+, JTo',
+    '6:BTN': '22+, A2s+, K2s+, Q5s+, J7s+, T7s+, 96s+, 86s+, 75s+, 64s+, 54s, A2o+, K7o+, Q8o+, J8o+, T8o+, 98o, 87o',
+    '6:SB': '22+, A2s+, K2s+, Q4s+, J6s+, T6s+, 95s+, 85s+, 74s+, 64s+, 53s+, 43s, A2o+, K6o+, Q8o+, J8o+, T8o+, 97o+, 87o, 76o',
+    '7:UTG': '77+, AJs+, KQs, AQo+',
+    '7:LJ': '55+, A9s+, KTs+, QTs+, JTs, T9s, 98s, AJo+, KQo',
+    '7:HJ': '44+, A7s+, K9s+, Q9s+, J9s+, T9s, 98s, 87s, ATo+, KJo+, QJo',
+    '7:CO': '22+, A2s+, K7s+, Q8s+, J8s+, T8s+, 97s+, 87s, 76s, 65s, A8o+, KTo+, QTo+, JTo',
+    '7:BTN': '22+, A2s+, K2s+, Q5s+, J7s+, T7s+, 96s+, 86s+, 75s+, 64s+, 54s, A2o+, K7o+, Q8o+, J8o+, T8o+, 98o, 87o',
+    '7:SB': '22+, A2s+, K2s+, Q4s+, J6s+, T6s+, 95s+, 85s+, 74s+, 64s+, 53s+, 43s, A2o+, K6o+, Q8o+, J8o+, T8o+, 97o+, 87o, 76o',
+    '8:UTG': '77+, AJs+, KQs, AQo+',
+    '8:UTG+1': '66+, ATs+, KJs+, QJs, JTs, T9s, AJo+, KQo',
+    '8:LJ': '55+, A9s+, KTs+, QTs+, JTs, T9s, 98s, AJo+, KQo',
+    '8:HJ': '44+, A7s+, K9s+, Q9s+, J9s+, T9s, 98s, 87s, ATo+, KJo+, QJo',
+    '8:CO': '22+, A2s+, K7s+, Q8s+, J8s+, T8s+, 97s+, 87s, 76s, 65s, A8o+, KTo+, QTo+, JTo',
+    '8:BTN': '22+, A2s+, K2s+, Q5s+, J7s+, T7s+, 96s+, 86s+, 75s+, 64s+, 54s, A2o+, K7o+, Q8o+, J8o+, T8o+, 98o, 87o',
+    '8:SB': '22+, A2s+, K2s+, Q4s+, J6s+, T6s+, 95s+, 85s+, 74s+, 64s+, 53s+, 43s, A2o+, K6o+, Q8o+, J8o+, T8o+, 97o+, 87o, 76o',
+  };
 
   function parseCardCode(value) {
     const match = String(value || '').trim().match(/^([2-9TJQKA])([shdc])$/i);
@@ -120,9 +150,121 @@
     return rangeSet;
   }
 
+  function handKeyFromRanks(firstRank, secondRank, suitedness) {
+    if (!RANK_VALUES[firstRank] || !RANK_VALUES[secondRank]) return null;
+    if (firstRank === secondRank) return `${firstRank}${secondRank}`;
+
+    const highRank = RANK_VALUES[firstRank] > RANK_VALUES[secondRank] ? firstRank : secondRank;
+    const lowRank = highRank === firstRank ? secondRank : firstRank;
+    return `${highRank}${lowRank}${suitedness}`;
+  }
+
+  function rankLabelsBetween(startRank, endRank) {
+    const startValue = RANK_VALUES[startRank];
+    const endValue = RANK_VALUES[endRank];
+    if (!startValue || !endValue) return [];
+
+    const minValue = Math.min(startValue, endValue);
+    const maxValue = Math.max(startValue, endValue);
+    return Object.keys(RANK_VALUES).filter((rank) => (
+      RANK_VALUES[rank] >= minValue && RANK_VALUES[rank] <= maxValue
+    ));
+  }
+
+  function addExactHand(rangeSet, firstRank, secondRank, suitedness = '') {
+    const key = handKeyFromRanks(firstRank, secondRank, suitedness);
+    if (key && HAND_KEYS.includes(key)) rangeSet[key] = true;
+  }
+
+  function addPairPlus(rangeSet, rank) {
+    Object.keys(RANK_VALUES)
+      .filter((pairRank) => RANK_VALUES[pairRank] >= RANK_VALUES[rank])
+      .forEach((pairRank) => { rangeSet[`${pairRank}${pairRank}`] = true; });
+  }
+
+  function addNonPairPlus(rangeSet, highRank, lowRank, suitedness) {
+    Object.keys(RANK_VALUES)
+      .filter((rank) => (
+        RANK_VALUES[rank] >= RANK_VALUES[lowRank] &&
+        RANK_VALUES[rank] < RANK_VALUES[highRank]
+      ))
+      .forEach((rank) => addExactHand(rangeSet, highRank, rank, suitedness));
+  }
+
+  function addRangeToken(rangeSet, token) {
+    const trimmed = String(token || '').trim();
+    if (!trimmed) return;
+
+    const exactPair = trimmed.match(/^([2-9TJQKA])\1$/);
+    if (exactPair) {
+      addExactHand(rangeSet, exactPair[1], exactPair[1]);
+      return;
+    }
+
+    const pairPlus = trimmed.match(/^([2-9TJQKA])\1\+$/);
+    if (pairPlus) {
+      addPairPlus(rangeSet, pairPlus[1]);
+      return;
+    }
+
+    const pairRange = trimmed.match(/^([2-9TJQKA])\1-([2-9TJQKA])\2$/);
+    if (pairRange) {
+      rankLabelsBetween(pairRange[1], pairRange[2]).forEach((rank) => {
+        addExactHand(rangeSet, rank, rank);
+      });
+      return;
+    }
+
+    const exactNonPair = trimmed.match(/^([2-9TJQKA])([2-9TJQKA])([so])$/);
+    if (exactNonPair) {
+      addExactHand(rangeSet, exactNonPair[1], exactNonPair[2], exactNonPair[3]);
+      return;
+    }
+
+    const nonPairPlus = trimmed.match(/^([2-9TJQKA])([2-9TJQKA])([so])\+$/);
+    if (nonPairPlus) {
+      addNonPairPlus(rangeSet, nonPairPlus[1], nonPairPlus[2], nonPairPlus[3]);
+      return;
+    }
+
+    const nonPairRange = trimmed.match(/^([2-9TJQKA])([2-9TJQKA])([so])-([2-9TJQKA])([2-9TJQKA])\3$/);
+    if (nonPairRange && nonPairRange[1] === nonPairRange[4]) {
+      rankLabelsBetween(nonPairRange[2], nonPairRange[5]).forEach((rank) => {
+        if (rank !== nonPairRange[1]) addExactHand(rangeSet, nonPairRange[1], rank, nonPairRange[3]);
+      });
+    }
+  }
+
+  function parseRangeText(rangeText) {
+    const rangeSet = {};
+    String(rangeText || '')
+      .split(',')
+      .forEach((token) => addRangeToken(rangeSet, token));
+    return rangeSet;
+  }
+
+  function buildDefaultPositionRanges() {
+    return Object.fromEntries(
+      Object.entries(RFI_RANGE_TEXT_BY_POSITION).map(([rangeKey, rangeText]) => [
+        rangeKey,
+        encodeRangeSet(parseRangeText(rangeText)),
+      ])
+    );
+  }
+
+  const DEFAULT_RANGE_MODE = 'position';
+  const DEFAULT_POSITION_RANGES = buildDefaultPositionRanges();
+
+  function mergePositionRanges(positionRanges) {
+    return {
+      ...DEFAULT_POSITION_RANGES,
+      ...(positionRanges || {}),
+    };
+  }
+
   function positionsForPlayerCount(playerCount) {
     if (!Number.isInteger(playerCount) || playerCount < 2 || playerCount > 10) return [];
-    if (playerCount === 2) return ['BTN/SB', 'BB'];
+    if (playerCount === 2) return ['SB', 'BB'];
 
     const earlyPositionCount = playerCount - 3;
     const earlyPositions = {
@@ -293,6 +435,9 @@
   return {
     HAND_KEYS,
     POSITION_ORDER,
+    DEFAULT_POSITION_RANGES,
+    DEFAULT_RANGE_MODE,
+    RFI_RANGE_TEXT_BY_POSITION,
     canExecuteFold,
     cardsToKey,
     classifyBoardObservation,
@@ -306,8 +451,10 @@
     isImBackButtonText,
     parseCardCode,
     parsePokerNowCardClasses,
+    parseRangeText,
     positionRangeKey,
     positionsForPlayerCount,
+    mergePositionRanges,
     readDealerPosition,
     readSeatPosition,
     resolveRangeSet,

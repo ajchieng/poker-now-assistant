@@ -1,4 +1,6 @@
-const SETTINGS_VERSION = 4;
+importScripts('assistant-core.js');
+
+const SETTINGS_VERSION = 5;
 const OFFSCREEN_DOCUMENT = 'offscreen.html';
 let creatingOffscreenDocument = null;
 
@@ -39,19 +41,24 @@ async function ensureOffscreenDocument() {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.sync.get(
     {
-      rangeMode: 'single',
+      rangeMode: PokerNowAssistantCore.DEFAULT_RANGE_MODE,
       rangeSet: {},
-      positionRanges: {},
+      positionRanges: PokerNowAssistantCore.DEFAULT_POSITION_RANGES,
       soundEnabled: true,
       settingsVersion: 0,
     },
     (items) => {
       if (items.settingsVersion >= SETTINGS_VERSION) return;
 
+      const hasSingleRange = Object.keys(items.rangeSet || {}).length > 0;
+      const rangeMode = items.rangeMode === 'position' || !hasSingleRange
+        ? PokerNowAssistantCore.DEFAULT_RANGE_MODE
+        : 'single';
+
       chrome.storage.sync.set({
-        rangeMode: items.rangeMode === 'position' ? 'position' : 'single',
+        rangeMode,
         rangeSet: items.rangeSet || {},
-        positionRanges: items.positionRanges || {},
+        positionRanges: PokerNowAssistantCore.mergePositionRanges(items.positionRanges),
         soundEnabled: items.soundEnabled !== false,
         settingsVersion: SETTINGS_VERSION,
       });

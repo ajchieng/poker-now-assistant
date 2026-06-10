@@ -18,25 +18,17 @@ document.addEventListener('DOMContentLoaded', () => {
   let dragMode = 'select';
   let changedDuringDrag = new Set();
   let statusTimer = null;
-  let rangeMode = 'single';
+  let rangeMode = PokerNowAssistantCore.DEFAULT_RANGE_MODE;
   let singleRangeSet = {};
   let positionRanges = {};
 
-  for (let playerCount = 2; playerCount <= 10; playerCount += 1) {
+  for (let playerCount = 2; playerCount <= 8; playerCount += 1) {
     const option = document.createElement('option');
     option.value = String(playerCount);
     option.textContent = String(playerCount);
     if (playerCount === 6) option.selected = true;
     playerCountElement.appendChild(option);
   }
-  PokerNowAssistantCore.POSITION_ORDER.forEach((position) => {
-    const option = document.createElement('option');
-    option.value = position;
-    option.textContent = position;
-    if (position === 'BTN') option.selected = true;
-    positionElement.appendChild(option);
-  });
-
   function handKey(row, column) {
     if (row === column) return `${RANKS[row]}${RANKS[column]}`;
     if (row < column) return `${RANKS[row]}${RANKS[column]}s`;
@@ -66,6 +58,22 @@ document.addEventListener('DOMContentLoaded', () => {
     );
   }
 
+  function renderPositionOptions() {
+    const validPositions = PokerNowAssistantCore.positionsForPlayerCount(Number(playerCountElement.value));
+    const previousPosition = positionElement.value;
+    positionElement.innerHTML = '';
+    validPositions.forEach((position) => {
+      const option = document.createElement('option');
+      option.value = position;
+      option.textContent = position;
+      positionElement.appendChild(option);
+    });
+
+    positionElement.value = validPositions.includes(previousPosition)
+      ? previousPosition
+      : validPositions[0] || '';
+  }
+
   function currentRangeSet() {
     if (rangeMode === 'single') return singleRangeSet;
     return PokerNowAssistantCore.decodeRangeSet(positionRanges[currentPositionRangeKey()]);
@@ -73,6 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderRangeEditor() {
     const positionMode = rangeMode === 'position';
+    renderPositionOptions();
     rangeModeElement.value = rangeMode;
     positionControlsElement.classList.toggle('hidden', !positionMode);
     if (positionMode) {
@@ -269,16 +278,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   chrome.storage.sync.get({
     enabled: false,
-    rangeMode: 'single',
+    rangeMode: PokerNowAssistantCore.DEFAULT_RANGE_MODE,
     rangeSet: {},
-    positionRanges: {},
+    positionRanges: PokerNowAssistantCore.DEFAULT_POSITION_RANGES,
     soundEnabled: true,
   }, (items) => {
     enabledElement.checked = Boolean(items.enabled);
     soundEnabledElement.checked = items.soundEnabled !== false;
     rangeMode = items.rangeMode === 'position' ? 'position' : 'single';
     singleRangeSet = items.rangeSet || {};
-    positionRanges = items.positionRanges || {};
+    positionRanges = PokerNowAssistantCore.mergePositionRanges(items.positionRanges);
     renderRangeEditor();
   });
 
@@ -295,6 +304,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (area === 'sync' && changes.rangeMode) {
       rangeMode = changes.rangeMode.newValue === 'position' ? 'position' : 'single';
+      renderRangeEditor();
+    }
+    if (area === 'sync' && changes.positionRanges) {
+      positionRanges = PokerNowAssistantCore.mergePositionRanges(changes.positionRanges.newValue);
       renderRangeEditor();
     }
   });

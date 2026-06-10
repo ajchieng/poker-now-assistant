@@ -6,6 +6,7 @@ const {
   cardsToKey,
   classifyBoardObservation,
   classifyBoardState,
+  DEFAULT_POSITION_RANGES,
   decodeRangeSet,
   determinePosition,
   encodeRangeSet,
@@ -14,8 +15,10 @@ const {
   isImBackButtonText,
   parseCardCode,
   parsePokerNowCardClasses,
+  parseRangeText,
   positionRangeKey,
   positionsForPlayerCount,
+  mergePositionRanges,
   readDealerPosition,
   readSeatPosition,
   resolveRangeSet,
@@ -73,7 +76,7 @@ test('handles heads-up button/small-blind and fails closed without the dealer pl
     playerSeatPositions: [4, 9],
     dealerSeatPosition: 9,
     heroSeatPosition: 9,
-  }), 'BTN/SB');
+  }), 'SB');
   assert.equal(determinePosition({
     playerSeatPositions: [4, 9],
     dealerSeatPosition: 9,
@@ -87,7 +90,7 @@ test('handles heads-up button/small-blind and fails closed without the dealer pl
 });
 
 test('provides standard position labels for table sizes', () => {
-  assert.deepEqual(positionsForPlayerCount(2), ['BTN/SB', 'BB']);
+  assert.deepEqual(positionsForPlayerCount(2), ['SB', 'BB']);
   assert.deepEqual(positionsForPlayerCount(6), ['LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB']);
   assert.deepEqual(
     positionsForPlayerCount(9),
@@ -109,6 +112,51 @@ test('encodes position ranges compactly and resolves the current profile', () =>
     positionRanges: { [rangeKey]: encoded },
     tableContext: { activePlayerCount: 4, position: 'BTN' },
   }), { rangeSet, reason: null, rangeKey });
+});
+
+test('parses poker range shorthand into hand keys', () => {
+  assert.deepEqual(parseRangeText('77+'), {
+    77: true,
+    88: true,
+    99: true,
+    TT: true,
+    JJ: true,
+    QQ: true,
+    KK: true,
+    AA: true,
+  });
+
+  assert.deepEqual(parseRangeText('AJs+, KQo, 22-44'), {
+    AJs: true,
+    AQs: true,
+    AKs: true,
+    KQo: true,
+    22: true,
+    33: true,
+    44: true,
+  });
+});
+
+test('provides JSON-derived RFI defaults by players left and position', () => {
+  const sixMaxLjRange = decodeRangeSet(DEFAULT_POSITION_RANGES['6:LJ']);
+  assert.equal(sixMaxLjRange.A9s, true);
+  assert.equal(sixMaxLjRange.KTs, true);
+  assert.equal(sixMaxLjRange.AJo, true);
+  assert.equal(sixMaxLjRange.A8s, undefined);
+  assert.equal(sixMaxLjRange.KJo, undefined);
+
+  const headsUpButtonRange = decodeRangeSet(DEFAULT_POSITION_RANGES['2:SB']);
+  assert.equal(headsUpButtonRange.K2o, true);
+  assert.equal(headsUpButtonRange.Q4o, undefined);
+  assert.equal(headsUpButtonRange.Q5o, true);
+});
+
+test('merges default position ranges beneath saved user edits', () => {
+  const customRange = encodeRangeSet({ AA: true });
+  const mergedRanges = mergePositionRanges({ '6:LJ': customRange });
+
+  assert.equal(mergedRanges['6:LJ'], customRange);
+  assert.deepEqual(decodeRangeSet(mergedRanges['6:HJ']), decodeRangeSet(DEFAULT_POSITION_RANGES['6:HJ']));
 });
 
 test('position mode fails closed when table context is unavailable', () => {

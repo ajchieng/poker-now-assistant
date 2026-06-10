@@ -1,8 +1,8 @@
 const DEFAULTS = {
   enabled: false,
-  rangeMode: 'single',
+  rangeMode: PokerNowAssistantCore.DEFAULT_RANGE_MODE,
   rangeSet: {},
-  positionRanges: {},
+  positionRanges: PokerNowAssistantCore.DEFAULT_POSITION_RANGES,
   soundEnabled: true,
 };
 const STATUS_MESSAGES = {
@@ -398,7 +398,7 @@ try {
     state.enabled = Boolean(items.enabled);
     state.rangeMode = items.rangeMode === 'position' ? 'position' : 'single';
     state.rangeSet = items.rangeSet || {};
-    state.positionRanges = items.positionRanges || {};
+    state.positionRanges = PokerNowAssistantCore.mergePositionRanges(items.positionRanges);
     state.soundEnabled = items.soundEnabled !== false;
     state.settingsLoaded = true;
     scheduleAttempt();
@@ -411,7 +411,9 @@ try {
         state.rangeMode = changes.rangeMode.newValue === 'position' ? 'position' : 'single';
       }
       if (changes.rangeSet) state.rangeSet = changes.rangeSet.newValue || {};
-      if (changes.positionRanges) state.positionRanges = changes.positionRanges.newValue || {};
+      if (changes.positionRanges) {
+        state.positionRanges = PokerNowAssistantCore.mergePositionRanges(changes.positionRanges.newValue);
+      }
       if (changes.soundEnabled) state.soundEnabled = Boolean(changes.soundEnabled.newValue);
       scheduleAttempt();
       return;
