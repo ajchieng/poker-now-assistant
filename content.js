@@ -21,7 +21,6 @@ const STATUS_MESSAGES = {
   'fold-button-missing': 'Waiting for your Fold action.',
   folded: 'Fold clicked.',
 };
-
 const state = {
   enabled: DEFAULTS.enabled,
   rangeMode: DEFAULTS.rangeMode,
@@ -43,8 +42,15 @@ let lastReturnClickAt = 0;
 const FOLD_CLICK_COOLDOWN_MS = 1500;
 const RETURN_CLICK_COOLDOWN_MS = 2000;
 const BYPASS_WINDOW_MS = 5000;
+const TABLE_CONTEXT_CACHE_MS = 3000;
 let observer = null;
 let contentScriptStopped = false;
+let cachedTableContext = null;
+let lastTableDiagnostics = {
+  ok: false,
+  source: 'none',
+  reason: 'not-scanned',
+};
 
 function stopContentScript() {
   if (contentScriptStopped) return;
@@ -105,11 +111,18 @@ function extractPlayerCards() {
   return cards.every(Boolean) ? cards : null;
 }
 
+function setTableDiagnostics(diagnostics) {
+  lastTableDiagnostics = {
+    ok: false,
+    source: 'live',
+    scannedAt: Date.now(),
+    ...diagnostics,
+  };
+}
+
 function readTableContext() {
   const heroPlayers = document.querySelectorAll('.table-player.you-player:not(.table-player-seat)');
   const dealerButtons = document.querySelectorAll('.dealer-button-ctn:not(.live-straddle)');
-  if (heroPlayers.length !== 1 || dealerButtons.length !== 1) return null;
-
   const participants = Array.from(
     document.querySelectorAll('.table-player:not(.table-player-seat)')
   ).filter((player) => (
@@ -118,14 +131,57 @@ function readTableContext() {
   ));
   const playerSeatPositions = participants
     .map((player) => PokerNowAssistantCore.readSeatPosition(player.classList));
-  const heroSeatPosition = PokerNowAssistantCore.readSeatPosition(heroPlayers[0].classList);
-  const dealerSeatPosition = PokerNowAssistantCore.readDealerPosition(dealerButtons[0].classList);
-  if (
-    participants.length < 2 ||
-    playerSeatPositions.some((position) => position === null) ||
-    heroSeatPosition === null ||
-    dealerSeatPosition === null
-  ) return null;
+  const heroSeatPosition = heroPlayers.length === 1
+    ? PokerNowAssistantCore.readSeatPosition(heroPlayers[0].classList)
+    : null;
+  const dealerSeatPosition = dealerButtons.length === 1
+    ? PokerNowAssistantCore.readDealerPosition(dealerButtons[0].classList)
+    : null;
+  const diagnostics = {
+    ok: false,
+    source: 'live',
+    reason: 'ok',
+    heroCount: heroPlayers.length,
+    dealerButtonCount: dealerButtons.length,
+    participantCount: participants.length,
+    playerSeatPositions,
+    invalidSeatCount: playerSeatPositions.filter((position) => position === null).length,
+    heroSeatPosition,
+    dealerSeatPosition,
+    position: null,
+    activePlayerCount: null,
+  };
+
+  if (heroPlayers.length !== 1) {
+    setTableDiagnostics({
+      ...diagnostics,
+      reason: heroPlayers.length === 0 ? 'hero-missing' : 'hero-ambiguous',
+    });
+    return null;
+  }
+  if (dealerButtons.length !== 1) {
+    setTableDiagnostics({
+      ...diagnostics,
+      reason: dealerButtons.length === 0 ? 'dealer-missing' : 'dealer-ambiguous',
+    });
+    return null;
+  }
+  if (participants.length < 2) {
+    setTableDiagnostics({ ...diagnostics, reason: 'participants-too-low' });
+    return null;
+  }
+  if (playerSeatPositions.some((position) => position === null)) {
+    setTableDiagnostics({ ...diagnostics, reason: 'seat-position-unreadable' });
+    return null;
+  }
+  if (heroSeatPosition === null) {
+    setTableDiagnostics({ ...diagnostics, reason: 'hero-seat-unreadable' });
+    return null;
+  }
+  if (dealerSeatPosition === null) {
+    setTableDiagnostics({ ...diagnostics, reason: 'dealer-seat-unreadable' });
+    return null;
+  }
 
   const position = PokerNowAssistantCore.determinePosition({
     playerSeatPositions,
@@ -133,13 +189,68 @@ function readTableContext() {
     dealerSeatPosition,
   });
   const participantCount = participants.length;
-  if (!position || participantCount < 2 || participantCount > 10) return null;
+  if (!position) {
+    setTableDiagnostics({ ...diagnostics, reason: 'position-unresolved' });
+    return null;
+  }
+  if (participantCount < 2 || participantCount > 10) {
+    setTableDiagnostics({
+      ...diagnostics,
+      reason: 'player-count-unsupported',
+      position,
+      activePlayerCount: participantCount,
+    });
+    return null;
+  }
+
+  setTableDiagnostics({
+    ...diagnostics,
+    ok: true,
+    reason: 'ok',
+    position,
+    activePlayerCount: participantCount,
+  });
 
   return {
     position,
     activePlayerCount: participantCount,
     participantCount,
   };
+}
+
+function readCachedTableContext(now = Date.now()) {
+  if (!cachedTableContext || !activeHoleCardsKey) return null;
+  if (cachedTableContext.holeCardsKey !== activeHoleCardsKey) return null;
+  const cacheAgeMs = now - cachedTableContext.cachedAt;
+  if (cacheAgeMs > TABLE_CONTEXT_CACHE_MS) {
+    cachedTableContext = null;
+    return null;
+  }
+  setTableDiagnostics({
+    ...lastTableDiagnostics,
+    ok: true,
+    source: 'cache',
+    reason: 'cached-context',
+    cacheAgeMs,
+    position: cachedTableContext.tableContext.position,
+    activePlayerCount: cachedTableContext.tableContext.activePlayerCount,
+    participantCount: cachedTableContext.tableContext.participantCount,
+  });
+  return cachedTableContext.tableContext;
+}
+
+function readStableTableContext(hasTwoHoleCards) {
+  const tableContext = readTableContext();
+  if (tableContext && activeHoleCardsKey) {
+    cachedTableContext = {
+      holeCardsKey: activeHoleCardsKey,
+      tableContext,
+      cachedAt: Date.now(),
+    };
+    return tableContext;
+  }
+
+  return hasTwoHoleCards ? readCachedTableContext() : null;
 }
 
 function updateHandTracking(cards) {
@@ -155,6 +266,7 @@ function updateHandTracking(cards) {
     bypassedHoleCardsKey = null;
     foldCandidate = null;
     postflopSeenForHand = false;
+    cachedTableContext = null;
   }
 }
 
@@ -244,25 +356,31 @@ function setRuntimeStatus(reason, handKey = null, tableContext = null) {
     state.rangeMode,
     tableContext?.position || '',
     tableContext?.activePlayerCount || '',
+    lastTableDiagnostics?.source || '',
+    lastTableDiagnostics?.reason || '',
+    lastTableDiagnostics?.heroCount ?? '',
+    lastTableDiagnostics?.dealerButtonCount ?? '',
+    lastTableDiagnostics?.participantCount ?? '',
   ].join(':');
   if (signature === lastStatusSignature) return;
   lastStatusSignature = signature;
 
-  setLocalStorage({
-    runtimeStatus: {
-      reason,
-      message: STATUS_MESSAGES[reason] || reason,
-      handKey,
-      canBypass: Boolean(activeHoleCardsKey),
-      bypassed: handBypassed,
-      enabled: state.enabled,
-      rangeMode: state.rangeMode,
-      position: tableContext?.position || null,
-      activePlayerCount: tableContext?.activePlayerCount || null,
-      participantCount: tableContext?.participantCount || null,
-      updatedAt: Date.now(),
-    },
-  });
+  const runtimeStatus = {
+    reason,
+    message: STATUS_MESSAGES[reason] || reason,
+    handKey,
+    canBypass: Boolean(activeHoleCardsKey),
+    bypassed: handBypassed,
+    enabled: state.enabled,
+    rangeMode: state.rangeMode,
+    position: tableContext?.position || null,
+    activePlayerCount: tableContext?.activePlayerCount || null,
+    participantCount: tableContext?.participantCount || null,
+    diagnostics: state.rangeMode === 'position' ? lastTableDiagnostics : null,
+    updatedAt: Date.now(),
+  };
+
+  setLocalStorage({ runtimeStatus });
 }
 
 function attemptAssistantAction() {
@@ -285,7 +403,9 @@ function attemptAssistantAction() {
     foldAvailable: Boolean(foldButton),
   };
   const boardState = detectBoardState(boardContext);
-  const tableContext = state.rangeMode === 'position' ? readTableContext() : null;
+  const tableContext = state.rangeMode === 'position'
+    ? readStableTableContext(boardContext.hasTwoHoleCards)
+    : null;
   const resolvedRange = PokerNowAssistantCore.resolveRangeSet({
     rangeMode: state.rangeMode,
     rangeSet: state.rangeSet,

@@ -7,14 +7,32 @@ document.addEventListener('DOMContentLoaded', () => {
   const playerCountElement = document.getElementById('playerCount');
   const positionElement = document.getElementById('position');
   const copySingleElement = document.getElementById('copySingle');
+  const autoFollowContextElement = document.getElementById('autoFollowContext');
   const presetLabelElement = document.getElementById('presetLabel');
   const editingLabelElement = document.getElementById('editingLabel');
   const contextHelpElement = document.getElementById('contextHelp');
   const rangeElement = document.getElementById('range');
   const selectedCountElement = document.getElementById('selectedCount');
   const runtimeStatusElement = document.getElementById('runtimeStatus');
+  const diagnosticsContentElement = document.getElementById('diagnosticsContent');
   const bypassHandElement = document.getElementById('bypassHand');
+  const refreshTableElement = document.getElementById('refreshTable');
   const saveStatusElement = document.getElementById('saveStatus');
+  const DIAGNOSTIC_REASON_LABELS = {
+    ok: 'Live scan succeeded',
+    'not-scanned': 'No scan has run yet',
+    'hero-missing': 'Could not find your player node',
+    'hero-ambiguous': 'Found multiple current-player nodes',
+    'dealer-missing': 'Could not find the dealer button',
+    'dealer-ambiguous': 'Found multiple dealer buttons',
+    'participants-too-low': 'Fewer than two seated participants found',
+    'seat-position-unreadable': 'Could not read every participant seat',
+    'hero-seat-unreadable': 'Could not read your seat',
+    'dealer-seat-unreadable': 'Could not read the dealer seat',
+    'position-unresolved': 'Could not map seats to a poker position',
+    'player-count-unsupported': 'Detected player count is unsupported',
+    'cached-context': 'Using recent successful scan',
+  };
   let dragging = false;
   let dragMode = 'select';
   let changedDuringDrag = new Set();
@@ -23,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let singleRangeSet = {};
   let savedPositionRanges = {};
   let positionRanges = {};
+  let autoFollowContext = true;
   let latestRuntimeStatus = null;
 
   for (let playerCount = 2; playerCount <= 8; playerCount += 1) {
@@ -164,6 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function syncEditorToRuntimeContext(runtimeStatus) {
+    if (!autoFollowContext) return false;
     if (rangeMode !== 'position') return;
 
     const activePlayerCount = Number(runtimeStatus?.activePlayerCount);
@@ -188,7 +208,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateCount() {
     const count = rangeElement.querySelectorAll('.cell.selected').length;
-    selectedCountElement.textContent = `${count} / 169 kept`;
+    const total = PokerNowAssistantCore.HAND_KEYS.length;
+    const percentage = total ? ((count / total) * 100).toFixed(1) : '0.0';
+    selectedCountElement.textContent = `${count} / ${total} kept · ${percentage}%`;
     selectedCountElement.classList.toggle('warning', count === 0);
     updatePresetLabel();
   }
@@ -272,6 +294,48 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCount();
   }
 
+  function formatDiagnosticValue(value) {
+    if (Array.isArray(value)) return value.length ? value.map((item) => item ?? '?').join(', ') : 'None';
+    if (value === null || value === undefined || value === '') return 'Unknown';
+    return String(value);
+  }
+
+  function appendDiagnosticRow(list, label, value) {
+    const term = document.createElement('dt');
+    term.textContent = label;
+    const description = document.createElement('dd');
+    description.textContent = formatDiagnosticValue(value);
+    list.append(term, description);
+  }
+
+  function renderDiagnostics(runtimeStatus) {
+    diagnosticsContentElement.innerHTML = '';
+    const diagnostics = runtimeStatus?.diagnostics;
+    if (!diagnostics) {
+      diagnosticsContentElement.textContent = 'No position scan diagnostics yet.';
+      return;
+    }
+
+    const list = document.createElement('dl');
+    list.className = 'diagnostics-grid';
+    const source = diagnostics.source === 'cache'
+      ? `Cache (${Math.round(diagnostics.cacheAgeMs || 0)} ms old)`
+      : diagnostics.source || 'live';
+    appendDiagnosticRow(list, 'Result', diagnostics.ok ? 'OK' : 'Blocked');
+    appendDiagnosticRow(list, 'Reason', DIAGNOSTIC_REASON_LABELS[diagnostics.reason] || diagnostics.reason);
+    appendDiagnosticRow(list, 'Source', source);
+    appendDiagnosticRow(list, 'Hero nodes', diagnostics.heroCount);
+    appendDiagnosticRow(list, 'Dealer buttons', diagnostics.dealerButtonCount);
+    appendDiagnosticRow(list, 'Participants', diagnostics.participantCount);
+    appendDiagnosticRow(list, 'Unreadable seats', diagnostics.invalidSeatCount);
+    appendDiagnosticRow(list, 'Hero seat', diagnostics.heroSeatPosition);
+    appendDiagnosticRow(list, 'Dealer seat', diagnostics.dealerSeatPosition);
+    appendDiagnosticRow(list, 'Participant seats', diagnostics.playerSeatPositions);
+    appendDiagnosticRow(list, 'Position', diagnostics.position);
+    appendDiagnosticRow(list, 'Player count', diagnostics.activePlayerCount);
+    diagnosticsContentElement.appendChild(list);
+  }
+
   function renderRuntimeStatus(runtimeStatus) {
     latestRuntimeStatus = runtimeStatus;
     const message = runtimeStatus?.message || 'Open a PokerNow table.';
@@ -289,6 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
       : runtimeStatus?.bypassed
         ? 'Bypassed for this hand'
         : 'Bypass this hand';
+    renderDiagnostics(runtimeStatus);
     if (!syncEditorToRuntimeContext(runtimeStatus)) buildGrid(currentRangeSet());
   }
 
@@ -388,6 +453,12 @@ document.addEventListener('DOMContentLoaded', () => {
     syncEditorToRuntimeContext(latestRuntimeStatus);
   });
 
+  autoFollowContextElement.addEventListener('change', () => {
+    autoFollowContext = autoFollowContextElement.checked;
+    chrome.storage.sync.set({ autoFollowContext }, () => showSaved());
+    if (autoFollowContext) syncEditorToRuntimeContext(latestRuntimeStatus);
+  });
+
   playerCountElement.addEventListener('change', renderRangeEditor);
   positionElement.addEventListener('change', renderRangeEditor);
 
@@ -423,6 +494,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  refreshTableElement.addEventListener('click', () => {
+    refreshTableElement.disabled = true;
+    chrome.storage.local.set({ runtimeStatus: null }, () => {
+      renderRuntimeStatus(null);
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs[0];
+        if (!activeTab?.id) {
+          refreshTableElement.disabled = false;
+          showSaved('No active tab');
+          return;
+        }
+
+        chrome.tabs.reload(activeTab.id, {}, () => {
+          if (chrome.runtime.lastError) {
+            refreshTableElement.disabled = false;
+            showSaved('Refresh failed');
+            return;
+          }
+          showSaved('Table refreshed');
+          window.close();
+        });
+      });
+    });
+  });
+
   buildGrid({});
 
   chrome.storage.sync.get({
@@ -430,6 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
     rangeMode: PokerNowAssistantCore.DEFAULT_RANGE_MODE,
     rangeSet: {},
     positionRanges: {},
+    autoFollowContext: true,
     soundEnabled: true,
   }, (items) => {
     enabledElement.checked = Boolean(items.enabled);
@@ -438,6 +535,8 @@ document.addEventListener('DOMContentLoaded', () => {
     singleRangeSet = items.rangeSet || {};
     savedPositionRanges = normalizePositionRangeOverrides(items.positionRanges);
     positionRanges = PokerNowAssistantCore.mergePositionRanges(savedPositionRanges);
+    autoFollowContext = items.autoFollowContext !== false;
+    autoFollowContextElement.checked = autoFollowContext;
     renderRangeEditor();
     syncEditorToRuntimeContext(latestRuntimeStatus);
   });
@@ -452,6 +551,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (area === 'sync' && changes.enabled) {
       enabledElement.checked = Boolean(changes.enabled.newValue);
+    }
+    if (area === 'sync' && changes.autoFollowContext) {
+      autoFollowContext = changes.autoFollowContext.newValue !== false;
+      autoFollowContextElement.checked = autoFollowContext;
+      if (autoFollowContext) syncEditorToRuntimeContext(latestRuntimeStatus);
     }
     if (area === 'sync' && changes.rangeMode) {
       rangeMode = changes.rangeMode.newValue === 'position' ? 'position' : 'single';

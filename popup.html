@@ -51,6 +51,12 @@
       .cell.selected.current-hand { box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--current); }
       .runtime { margin-top: 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: #f8f9fb; font-size: 12px; }
       .runtime strong { margin-right: 4px; }
+      .diagnostics { margin-top: 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; font-size: 12px; }
+      .diagnostics summary { padding: 8px 10px; color: #242935; font-weight: 600; cursor: pointer; }
+      .diagnostics-content { padding: 0 10px 10px; color: var(--muted); }
+      .diagnostics-grid { display: grid; grid-template-columns: 120px 1fr; gap: 5px 10px; margin: 0; }
+      .diagnostics-grid dt { color: #374151; font-weight: 600; }
+      .diagnostics-grid dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
       #bypassHand { min-width: 132px; }
       #bypassHand.active { border-color: #8a4b08; background: #fff6e9; color: #8a4b08; }
       .warning { color: #8a4b08; }
@@ -65,6 +71,7 @@
       </div>
       <div class="header-actions">
         <button id="bypassHand" type="button" disabled>Bypass this hand</button>
+        <button id="refreshTable" type="button">Refresh table</button>
         <label class="toggle"><input id="enabled" type="checkbox" /> Enabled</label>
         <label class="toggle"><input id="soundEnabled" type="checkbox" /> Playable-hand sound</label>
       </div>
@@ -86,6 +93,7 @@
         <label for="position">Position</label>
         <select id="position"></select>
         <button id="copySingle" type="button">Copy single range</button>
+        <label class="toggle"><input id="autoFollowContext" type="checkbox" /> Follow table</label>
       </div>
       <p id="contextHelp" class="context-help">One range is used at every table.</p>
     </div>
@@ -103,6 +111,10 @@
     <div id="range" aria-label="Hold'em keep range"></div>
     <div id="runtimeStatus" class="runtime"><strong>Status:</strong> Open a PokerNow table.</div>
     <div id="saveStatus" aria-live="polite"></div>
+    <details id="diagnosticsPanel" class="diagnostics">
+      <summary>Diagnostics</summary>
+      <div id="diagnosticsContent" class="diagnostics-content">No position scan diagnostics yet.</div>
+    </details>
 
     <script src="assistant-core.js"></script>
     <script src="popup.js"></script>
