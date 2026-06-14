@@ -325,6 +325,7 @@ function findUniqueActionButton(actionClass) {
 }
 
 function returnFromAwayIfNeeded() {
+  if (!state.enabled) return false;
   const returnButton = Array.from(document.querySelectorAll('button')).find(
     (button) => isActionable(button) && PokerNowAssistantCore.isImBackButtonText(button.textContent)
   );
@@ -332,6 +333,7 @@ function returnFromAwayIfNeeded() {
 
   const now = Date.now();
   if (PokerNowAssistantCore.shouldClickImBackButton({
+    enabled: state.enabled,
     text: returnButton.textContent,
     actionable: true,
     lastClickAt: lastReturnClickAt,
@@ -388,8 +390,8 @@ function attemptAssistantAction() {
     stopContentScript();
     return;
   }
-  if (returnFromAwayIfNeeded()) return;
   if (!state.settingsLoaded) return;
+  if (returnFromAwayIfNeeded()) return;
 
   const cards = extractPlayerCards();
   updateHandTracking(cards);

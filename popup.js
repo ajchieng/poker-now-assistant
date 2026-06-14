@@ -13,10 +13,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const contextHelpElement = document.getElementById('contextHelp');
   const rangeElement = document.getElementById('range');
   const selectedCountElement = document.getElementById('selectedCount');
+  const rangeDiffElement = document.getElementById('rangeDiff');
   const runtimeStatusElement = document.getElementById('runtimeStatus');
   const diagnosticsContentElement = document.getElementById('diagnosticsContent');
   const bypassHandElement = document.getElementById('bypassHand');
   const refreshTableElement = document.getElementById('refreshTable');
+  const exportConfigElement = document.getElementById('exportConfig');
+  const importConfigElement = document.getElementById('importConfig');
+  const configFileElement = document.getElementById('configFile');
   const saveStatusElement = document.getElementById('saveStatus');
   const DIAGNOSTIC_REASON_LABELS = {
     ok: 'Live scan succeeded',
@@ -32,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'position-unresolved': 'Could not map seats to a poker position',
     'player-count-unsupported': 'Detected player count is unsupported',
     'cached-context': 'Using recent successful scan',
+    'position-unknown': 'Position or player count could not be confirmed',
   };
   let dragging = false;
   let dragMode = 'select';
@@ -44,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let autoFollowContext = true;
   let latestRuntimeStatus = null;
 
-  for (let playerCount = 2; playerCount <= 8; playerCount += 1) {
+  for (let playerCount = 2; playerCount <= 10; playerCount += 1) {
     const option = document.createElement('option');
     option.value = String(playerCount);
     option.textContent = String(playerCount);
@@ -104,6 +109,62 @@ document.addEventListener('DOMContentLoaded', () => {
     );
   }
 
+  function applySettings(settings) {
+    enabledElement.checked = Boolean(settings.enabled);
+    soundEnabledElement.checked = settings.soundEnabled !== false;
+    rangeMode = settings.rangeMode === 'position' ? 'position' : 'single';
+    singleRangeSet = settings.rangeSet || {};
+    savedPositionRanges = normalizePositionRangeOverrides(settings.positionRanges);
+    positionRanges = PokerNowAssistantCore.mergePositionRanges(savedPositionRanges);
+    autoFollowContext = settings.autoFollowContext !== false;
+    autoFollowContextElement.checked = autoFollowContext;
+    renderRangeEditor();
+    syncEditorToRuntimeContext(latestRuntimeStatus);
+  }
+
+  function exportConfiguration() {
+    const config = PokerNowAssistantCore.createConfigExport({
+      enabled: enabledElement.checked,
+      rangeMode,
+      rangeSet: singleRangeSet,
+      positionRanges: savedPositionRanges,
+      autoFollowContext,
+      soundEnabled: soundEnabledElement.checked,
+    });
+    if (!config) {
+      showSaved('Config export failed');
+      return;
+    }
+
+    const blob = new Blob([`${JSON.stringify(config, null, 2)}\n`], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pokernow-assistant-config-${config.exportedAt.slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    showSaved('Config exported');
+  }
+
+  async function importConfiguration(file) {
+    const settings = PokerNowAssistantCore.parseConfigImport(await file.text());
+    if (!settings) {
+      showSaved('Invalid config file');
+      return;
+    }
+
+    chrome.storage.sync.set(settings, () => {
+      if (chrome.runtime.lastError) {
+        showSaved('Config import failed');
+        return;
+      }
+      applySettings(settings);
+      showSaved('Config imported');
+    });
+  }
+
   function rangeStateLabel(rangeSet) {
     if (!PokerNowAssistantCore.hasSelectedHands(rangeSet)) return 'Empty';
     if (rangeMode !== 'position') return 'Custom';
@@ -114,6 +175,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const stateLabel = rangeStateLabel(rangeSet);
     presetLabelElement.textContent = stateLabel;
     presetLabelElement.className = `preset-label ${stateLabel.toLowerCase()}`;
+  }
+
+  function updateRangeDiff(rangeSet) {
+    if (rangeMode !== 'position') {
+      rangeDiffElement.textContent = '';
+      rangeDiffElement.className = 'range-diff hidden';
+      return;
+    }
+
+    const defaultRangeSet = defaultRangeSetForCurrentPage();
+    let added = 0;
+    let removed = 0;
+    PokerNowAssistantCore.HAND_KEYS.forEach((key) => {
+      const selected = Boolean(rangeSet?.[key]);
+      const defaultSelected = Boolean(defaultRangeSet?.[key]);
+      if (selected && !defaultSelected) added += 1;
+      if (!selected && defaultSelected) removed += 1;
+    });
+
+    const matchesDefault = added === 0 && removed === 0;
+    rangeDiffElement.textContent = matchesDefault
+      ? 'Matches default'
+      : `+${added} / -${removed} vs default`;
+    rangeDiffElement.title = 'Hands added or removed compared with the built-in default for this page';
+    rangeDiffElement.className = `range-diff ${matchesDefault ? 'default' : 'custom'}`;
   }
 
   async function copyTextToClipboard(text) {
@@ -188,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const activePlayerCount = Number(runtimeStatus?.activePlayerCount);
     const position = runtimeStatus?.position;
-    if (!Number.isInteger(activePlayerCount) || activePlayerCount < 2 || activePlayerCount > 8) return;
+    if (!Number.isInteger(activePlayerCount) || activePlayerCount < 2 || activePlayerCount > 10) return;
 
     const validPositions = PokerNowAssistantCore.positionsForPlayerCount(activePlayerCount);
     if (!validPositions.includes(position)) return;
@@ -207,12 +293,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateCount() {
-    const count = rangeElement.querySelectorAll('.cell.selected').length;
+    const currentRange = selectedRange();
+    const count = Object.keys(currentRange).length;
     const total = PokerNowAssistantCore.HAND_KEYS.length;
     const percentage = total ? ((count / total) * 100).toFixed(1) : '0.0';
     selectedCountElement.textContent = `${count} / ${total} kept · ${percentage}%`;
     selectedCountElement.classList.toggle('warning', count === 0);
-    updatePresetLabel();
+    updatePresetLabel(currentRange);
+    updateRangeDiff(currentRange);
   }
 
   function saveRange(message = 'Saved') {
@@ -308,9 +396,34 @@ document.addEventListener('DOMContentLoaded', () => {
     list.append(term, description);
   }
 
+  function diagnosticsForStatus(runtimeStatus) {
+    if (runtimeStatus?.diagnostics) return runtimeStatus.diagnostics;
+    if (runtimeStatus?.position && runtimeStatus?.activePlayerCount) {
+      return {
+        ok: true,
+        source: 'status',
+        reason: 'ok',
+        position: runtimeStatus.position,
+        activePlayerCount: runtimeStatus.activePlayerCount,
+        participantCount: runtimeStatus.participantCount,
+      };
+    }
+    if (runtimeStatus?.reason === 'position-unknown') {
+      return {
+        ok: false,
+        source: 'status',
+        reason: 'position-unknown',
+        position: runtimeStatus.position,
+        activePlayerCount: runtimeStatus.activePlayerCount,
+        participantCount: runtimeStatus.participantCount,
+      };
+    }
+    return null;
+  }
+
   function renderDiagnostics(runtimeStatus) {
     diagnosticsContentElement.innerHTML = '';
-    const diagnostics = runtimeStatus?.diagnostics;
+    const diagnostics = diagnosticsForStatus(runtimeStatus);
     if (!diagnostics) {
       diagnosticsContentElement.textContent = 'No position scan diagnostics yet.';
       return;
@@ -320,6 +433,8 @@ document.addEventListener('DOMContentLoaded', () => {
     list.className = 'diagnostics-grid';
     const source = diagnostics.source === 'cache'
       ? `Cache (${Math.round(diagnostics.cacheAgeMs || 0)} ms old)`
+      : diagnostics.source === 'status'
+        ? 'Runtime status'
       : diagnostics.source || 'live';
     appendDiagnosticRow(list, 'Result', diagnostics.ok ? 'OK' : 'Blocked');
     appendDiagnosticRow(list, 'Reason', DIAGNOSTIC_REASON_LABELS[diagnostics.reason] || diagnostics.reason);
@@ -336,6 +451,32 @@ document.addEventListener('DOMContentLoaded', () => {
     diagnosticsContentElement.appendChild(list);
   }
 
+  function scanBadgeForStatus(runtimeStatus) {
+    const diagnostics = diagnosticsForStatus(runtimeStatus);
+    if (!diagnostics || diagnostics.reason === 'not-scanned') {
+      return { label: 'Scan idle', state: 'idle' };
+    }
+    if (diagnostics.source === 'cache') {
+      return { label: 'Using cache', state: 'cache' };
+    }
+    if (diagnostics.ok) {
+      return { label: 'Scan OK', state: 'ok' };
+    }
+    return { label: 'Scan blocked', state: 'blocked' };
+  }
+
+  function appendScanBadge(runtimeStatus) {
+    const badgeState = scanBadgeForStatus(runtimeStatus);
+    const badge = document.createElement('span');
+    badge.className = `scan-badge ${badgeState.state}`;
+    badge.textContent = badgeState.label;
+    const reason = diagnosticsForStatus(runtimeStatus)?.reason;
+    badge.title = reason
+      ? DIAGNOSTIC_REASON_LABELS[reason] || reason
+      : 'No position scan diagnostics yet';
+    runtimeStatusElement.appendChild(badge);
+  }
+
   function renderRuntimeStatus(runtimeStatus) {
     latestRuntimeStatus = runtimeStatus;
     const message = runtimeStatus?.message || 'Open a PokerNow table.';
@@ -346,6 +487,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ? ` · ${runtimeStatus.position}, ${runtimeStatus.activePlayerCount} players`
       : '';
     runtimeStatusElement.append(`${message}${hand}${context}`);
+    appendScanBadge(runtimeStatus);
     bypassHandElement.disabled = autoFoldOff || !runtimeStatus?.canBypass || Boolean(runtimeStatus?.bypassed);
     bypassHandElement.classList.toggle('active', autoFoldOff || Boolean(runtimeStatus?.bypassed));
     bypassHandElement.textContent = autoFoldOff
@@ -436,6 +578,19 @@ document.addEventListener('DOMContentLoaded', () => {
         buildGrid(pastedRange);
         saveRange('Range pasted');
       });
+  });
+
+  exportConfigElement.addEventListener('click', exportConfiguration);
+
+  importConfigElement.addEventListener('click', () => {
+    configFileElement.value = '';
+    configFileElement.click();
+  });
+
+  configFileElement.addEventListener('change', () => {
+    const file = configFileElement.files?.[0];
+    if (!file) return;
+    importConfiguration(file).catch(() => showSaved('Config import failed'));
   });
 
   enabledElement.addEventListener('change', () => {
@@ -529,16 +684,7 @@ document.addEventListener('DOMContentLoaded', () => {
     autoFollowContext: true,
     soundEnabled: true,
   }, (items) => {
-    enabledElement.checked = Boolean(items.enabled);
-    soundEnabledElement.checked = items.soundEnabled !== false;
-    rangeMode = items.rangeMode === 'position' ? 'position' : 'single';
-    singleRangeSet = items.rangeSet || {};
-    savedPositionRanges = normalizePositionRangeOverrides(items.positionRanges);
-    positionRanges = PokerNowAssistantCore.mergePositionRanges(savedPositionRanges);
-    autoFollowContext = items.autoFollowContext !== false;
-    autoFollowContextElement.checked = autoFollowContext;
-    renderRangeEditor();
-    syncEditorToRuntimeContext(latestRuntimeStatus);
+    applySettings(items);
   });
 
   chrome.storage.local.get({ runtimeStatus: null }, (items) => {
@@ -551,6 +697,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (area === 'sync' && changes.enabled) {
       enabledElement.checked = Boolean(changes.enabled.newValue);
+    }
+    if (area === 'sync' && changes.soundEnabled) {
+      soundEnabledElement.checked = changes.soundEnabled.newValue !== false;
+    }
+    if (area === 'sync' && changes.rangeSet) {
+      singleRangeSet = changes.rangeSet.newValue || {};
+      if (rangeMode === 'single') renderRangeEditor();
     }
     if (area === 'sync' && changes.autoFollowContext) {
       autoFollowContext = changes.autoFollowContext.newValue !== false;

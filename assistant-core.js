@@ -29,6 +29,8 @@
     if (row < column) return `${rowRank}${columnRank}s`;
     return `${columnRank}${rowRank}o`;
   }));
+  const CONFIG_APP_ID = 'pokernow-assistant';
+  const CONFIG_SCHEMA_VERSION = 1;
   const ALL_HANDS_RANGE_SET = Object.fromEntries(HAND_KEYS.map((key) => [key, true]));
   const BB_DEFAULT_RANGE_KEYS = Array.from({ length: 7 }, (_value, index) => `${index + 2}:BB`);
   const RFI_RANGE_TEXT_BY_POSITION = {
@@ -256,6 +258,12 @@
     BB_DEFAULT_RANGE_KEYS.forEach((rangeKey) => {
       defaultRanges[rangeKey] = encodedAllHandsRange;
     });
+    const encodedButtonRange = defaultRanges['8:BTN'];
+    [9, 10].forEach((playerCount) => {
+      positionsForPlayerCount(playerCount).forEach((position) => {
+        defaultRanges[`${playerCount}:${position}`] = encodedButtonRange;
+      });
+    });
     return defaultRanges;
   }
 
@@ -340,6 +348,92 @@
     return `${playerCount}:${position}`;
   }
 
+  function normalizeRangeSet(rangeSet) {
+    if (!rangeSet || typeof rangeSet !== 'object' || Array.isArray(rangeSet)) return null;
+    const normalized = {};
+    for (const [handKey, selected] of Object.entries(rangeSet)) {
+      if (!HAND_KEYS.includes(handKey) || selected !== true) return null;
+      normalized[handKey] = true;
+    }
+    return normalized;
+  }
+
+  function isValidEncodedRange(encodedRange) {
+    if (typeof encodedRange !== 'string' || !encodedRange) return false;
+    return encodeRangeSet(decodeRangeSet(encodedRange)) === encodedRange;
+  }
+
+  function normalizePositionRangeOverrides(positionRanges) {
+    if (!positionRanges || typeof positionRanges !== 'object' || Array.isArray(positionRanges)) {
+      return null;
+    }
+
+    const normalized = {};
+    for (const [rangeKey, encodedRange] of Object.entries(positionRanges)) {
+      const match = rangeKey.match(/^(\d+):(.+)$/);
+      if (!match) return null;
+      const playerCount = Number(match[1]);
+      const position = match[2];
+      if (!positionsForPlayerCount(playerCount).includes(position)) return null;
+      if (!isValidEncodedRange(encodedRange)) return null;
+      normalized[rangeKey] = encodedRange;
+    }
+    return normalized;
+  }
+
+  function createConfigExport(settings, exportedAt = new Date().toISOString()) {
+    const rangeSet = normalizeRangeSet(settings?.rangeSet || {});
+    const positionRanges = normalizePositionRangeOverrides(settings?.positionRanges || {});
+    if (!rangeSet || !positionRanges) return null;
+
+    return {
+      app: CONFIG_APP_ID,
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      exportedAt,
+      settings: {
+        enabled: Boolean(settings?.enabled),
+        rangeMode: settings?.rangeMode === 'single' ? 'single' : 'position',
+        rangeSet,
+        positionRanges,
+        autoFollowContext: settings?.autoFollowContext !== false,
+        soundEnabled: settings?.soundEnabled !== false,
+      },
+    };
+  }
+
+  function parseConfigImport(configValue) {
+    let config = configValue;
+    if (typeof configValue === 'string') {
+      try {
+        config = JSON.parse(configValue);
+      } catch (_error) {
+        return null;
+      }
+    }
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return null;
+    if (config.app !== CONFIG_APP_ID || config.schemaVersion !== CONFIG_SCHEMA_VERSION) return null;
+
+    const settings = config.settings;
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return null;
+    if (typeof settings.enabled !== 'boolean') return null;
+    if (!['single', 'position'].includes(settings.rangeMode)) return null;
+    if (typeof settings.autoFollowContext !== 'boolean') return null;
+    if (typeof settings.soundEnabled !== 'boolean') return null;
+
+    const rangeSet = normalizeRangeSet(settings.rangeSet);
+    const positionRanges = normalizePositionRangeOverrides(settings.positionRanges);
+    if (!rangeSet || !positionRanges) return null;
+
+    return {
+      enabled: settings.enabled,
+      rangeMode: settings.rangeMode,
+      rangeSet,
+      positionRanges,
+      autoFollowContext: settings.autoFollowContext,
+      soundEnabled: settings.soundEnabled,
+    };
+  }
+
   function resolveRangeSet({ rangeMode, rangeSet, positionRanges, tableContext }) {
     if (rangeMode !== 'position') {
       return { rangeSet: rangeSet || {}, reason: null, rangeKey: 'single' };
@@ -395,8 +489,9 @@
     return /^i\s*'\s*m\s+back$/i.test(normalized);
   }
 
-  function shouldClickImBackButton({ text, actionable, lastClickAt, now, cooldownMs }) {
+  function shouldClickImBackButton({ enabled, text, actionable, lastClickAt, now, cooldownMs }) {
     return Boolean(
+      enabled &&
       actionable &&
       isImBackButtonText(text) &&
       !isFoldClickCoolingDown({ lastFoldClickAt: lastClickAt, now, cooldownMs })
@@ -442,6 +537,8 @@
   return {
     HAND_KEYS,
     POSITION_ORDER,
+    CONFIG_APP_ID,
+    CONFIG_SCHEMA_VERSION,
     DEFAULT_POSITION_RANGES,
     DEFAULT_RANGE_MODE,
     RFI_RANGE_TEXT_BY_POSITION,
@@ -449,6 +546,7 @@
     cardsToKey,
     classifyBoardObservation,
     classifyBoardState,
+    createConfigExport,
     decodeRangeSet,
     determinePosition,
     encodeRangeSet,
@@ -457,6 +555,7 @@
     isFoldClickCoolingDown,
     isImBackButtonText,
     parseCardCode,
+    parseConfigImport,
     parsePokerNowCardClasses,
     parseRangeText,
     positionRangeKey,

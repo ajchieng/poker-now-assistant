@@ -12,7 +12,7 @@ A Chrome extension that folds two-card Hold'em hands outside configurable single
 - Never folds when a free Check action is available.
 - Never folds after community cards appear or when the street cannot be confirmed.
 - Gives each fold a five-second grace period for the **Bypass this hand** button, which immediately turns the assistant off and cancels the pending fold.
-- Automatically clicks PokerNow's **I'm Back** button whenever the user is marked away, even when the assistant is disabled.
+- Automatically clicks PokerNow's **I'm Back** button whenever the enabled assistant detects that the user is marked away.
 - Plays an optional two-note alert once when a selected preflop hand is dealt.
 - Clicks a rendered Fold button at most once.
 
@@ -29,14 +29,16 @@ A Chrome extension that folds two-card Hold'em hands outside configurable single
 1. Open the extension popup.
 2. Choose **Single range** to use one grid everywhere, or **Position + player count** for context-specific grids.
 3. In position mode, choose a player count and position, then select every starting hand you want to keep. Use **Copy single range** as a starting point for a profile. Blue cells are kept.
-4. Repeat for every player-count and position combination you expect to use. An unconfigured profile is empty and will never auto-fold.
+4. Repeat for every player-count and position combination you expect to customize. Untouched pages use their built-in defaults. For now, every 9- and 10-player page uses the 8-player BTN range as its default.
 5. Turn on **Enabled**.
 6. Join a two-card Hold'em table on `pokernow.com` or `pokernow.club`.
 7. Check the popup status while testing. It shows the detected position and number of table participants. Start with a play-money test table and conservative ranges.
 
 Before the flop, hands outside the selected range are folded when PokerNow shows an enabled Fold action and does not show an enabled Check action. In position mode, the extension uses the total detected table participants for the range page; folded players do not change the player-count profile. The assistant is inactive on every later street.
 
-The range editor shows the selected-hand count and percentage of all 169 Hold'em starting hands. The collapsed **Diagnostics** panel at the bottom of the popup shows the latest position-scan details, including hero/dealer node counts, participant seats, resolved position, and whether a short-lived cached table context is being used.
+The range editor shows the selected-hand count, percentage of all 169 Hold'em starting hands, and the current page's added/removed hand count versus its built-in default. The popup status includes a scan health badge, and the collapsed **Diagnostics** panel at the bottom shows the latest position-scan details, including hero/dealer node counts, participant seats, resolved position, and whether a short-lived cached table context is being used.
+
+Use **Export config** to download all ranges and settings as JSON. Use **Import config** to restore a previously exported file. Imports are validated before they replace the stored configuration.
 
 ## Development
 

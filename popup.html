@@ -21,7 +21,8 @@
       .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
       .header-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
       .toggle { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; white-space: nowrap; }
-      .toolbar { display: flex; align-items: center; gap: 6px; margin: 14px 0 10px; }
+      .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 14px 0 7px; }
+      .range-metrics { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 0 0 10px; min-height: 16px; }
       .range-settings { margin-top: 14px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: #fafbfc; }
       .setting-row { display: flex; align-items: center; gap: 8px; }
       .setting-row + .setting-row { margin-top: 9px; }
@@ -35,7 +36,11 @@
       .preset-label.default { border-color: #9bbfa4; color: #256235; background: #f1faf3; }
       .preset-label.custom { border-color: #aeb8c7; color: #374151; background: #f8fafc; }
       .preset-label.empty { border-color: #d6a96e; color: #8a4b08; background: #fff6e9; }
-      .count { margin-left: auto; color: var(--muted); font-size: 12px; }
+      .count { color: var(--muted); font-size: 12px; }
+      .range-diff { color: var(--muted); font-size: 12px; white-space: nowrap; }
+      .range-diff.custom { color: #8a4b08; }
+      .range-diff.hidden { display: none; }
+      .file-input { display: none; }
       button { border: 1px solid var(--border); border-radius: 5px; padding: 5px 9px; background: #fff; color: #242935; font: inherit; font-size: 12px; cursor: pointer; }
       button:hover { background: #f5f7fa; }
       #range { display: grid; grid-template-columns: 22px repeat(13, 32px); gap: 3px; user-select: none; }
@@ -51,6 +56,11 @@
       .cell.selected.current-hand { box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--current); }
       .runtime { margin-top: 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: #f8f9fb; font-size: 12px; }
       .runtime strong { margin-right: 4px; }
+      .scan-badge { display: inline-flex; align-items: center; margin-left: 7px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+      .scan-badge.ok { border-color: #9bbfa4; color: #256235; background: #f1faf3; }
+      .scan-badge.cache { border-color: #d6a96e; color: #8a4b08; background: #fff6e9; }
+      .scan-badge.blocked { border-color: #d6a96e; color: #8a4b08; background: #fff6e9; }
+      .scan-badge.idle { color: var(--muted); background: #fff; }
       .diagnostics { margin-top: 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; font-size: 12px; }
       .diagnostics summary { padding: 8px 10px; color: #242935; font-weight: 600; cursor: pointer; }
       .diagnostics-content { padding: 0 10px 10px; color: var(--muted); }
@@ -105,7 +115,13 @@
       <button id="resetDefault" type="button">Reset default</button>
       <button id="copyRange" type="button">Copy range</button>
       <button id="pasteRange" type="button">Paste range</button>
+      <button id="exportConfig" type="button">Export config</button>
+      <button id="importConfig" type="button">Import config</button>
+      <input id="configFile" class="file-input" type="file" accept="application/json,.json" />
+    </div>
+    <div class="range-metrics">
       <span id="selectedCount" class="count"></span>
+      <span id="rangeDiff" class="range-diff hidden"></span>
     </div>
 
     <div id="range" aria-label="Hold'em keep range"></div>

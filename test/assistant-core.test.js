@@ -6,6 +6,7 @@ const {
   cardsToKey,
   classifyBoardObservation,
   classifyBoardState,
+  createConfigExport,
   DEFAULT_POSITION_RANGES,
   decodeRangeSet,
   determinePosition,
@@ -15,6 +16,7 @@ const {
   isFoldClickCoolingDown,
   isImBackButtonText,
   parseCardCode,
+  parseConfigImport,
   parsePokerNowCardClasses,
   parseRangeText,
   positionRangeKey,
@@ -158,6 +160,18 @@ test('provides all hands as default big blind ranges', () => {
 
     assert.equal(Object.keys(rangeSet).length, HAND_KEYS.length);
     assert.equal(rangeSet['72o'], true);
+  }
+});
+
+test('uses the button range as the default for every 9- and 10-player profile', () => {
+  const buttonRange = decodeRangeSet(DEFAULT_POSITION_RANGES['8:BTN']);
+  for (const playerCount of [9, 10]) {
+    for (const position of positionsForPlayerCount(playerCount)) {
+      assert.deepEqual(
+        decodeRangeSet(DEFAULT_POSITION_RANGES[`${playerCount}:${position}`]),
+        buttonRange
+      );
+    }
   }
 });
 
@@ -336,6 +350,7 @@ test('recognizes PokerNow return-from-away button text', () => {
 
 test('clicks only actionable return buttons outside the cooldown', () => {
   const candidate = {
+    enabled: true,
     text: "I'm Back",
     actionable: true,
     lastClickAt: 0,
@@ -344,10 +359,36 @@ test('clicks only actionable return buttons outside the cooldown', () => {
   };
 
   assert.equal(shouldClickImBackButton(candidate), true);
+  assert.equal(shouldClickImBackButton({ ...candidate, enabled: false }), false);
   assert.equal(shouldClickImBackButton({ ...candidate, actionable: false }), false);
   assert.equal(shouldClickImBackButton({ ...candidate, text: 'Fold' }), false);
   assert.equal(shouldClickImBackButton({ ...candidate, lastClickAt: 500, now: 1000 }), false);
   assert.equal(shouldClickImBackButton({ ...candidate, lastClickAt: 500, now: 2500 }), true);
+});
+
+test('exports and imports validated user configuration', () => {
+  const settings = {
+    enabled: true,
+    rangeMode: 'position',
+    rangeSet: { AA: true, AKs: true },
+    positionRanges: { '10:UTG': encodeRangeSet({ KK: true }) },
+    autoFollowContext: false,
+    soundEnabled: true,
+  };
+  const exported = createConfigExport(settings, '2026-06-14T00:00:00.000Z');
+
+  assert.equal(exported.app, 'pokernow-assistant');
+  assert.equal(exported.schemaVersion, 1);
+  assert.deepEqual(parseConfigImport(JSON.stringify(exported)), settings);
+  assert.equal(parseConfigImport('{not json'), null);
+  assert.equal(parseConfigImport({ ...exported, schemaVersion: 2 }), null);
+  assert.equal(parseConfigImport({
+    ...exported,
+    settings: {
+      ...exported.settings,
+      positionRanges: { '10:MP': encodeRangeSet({ AA: true }) },
+    },
+  }), null);
 });
 
 test('bypass applies only to the matching current hand', () => {
